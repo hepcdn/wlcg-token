@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Weekly run so dependency drift is caught even without commits
+    - cron: "17 6 * * 1"
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  test:
+    name: test (stable, ${{ matrix.features }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        features: ["--no-default-features", "--all-features"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.features }}
+      - run: cargo fmt --check
+      - run: cargo clippy --locked --all-targets ${{ matrix.features }}
+      - run: cargo test --locked ${{ matrix.features }}
+
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    env:
+      RUSTDOCFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo doc --locked --no-deps --all-features
+
+  msrv:
+    name: msrv (${{ matrix.rust }})
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # Keep in sync with `rust-version` in Cargo.toml
+        rust: ["1.85"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --locked --all-targets --all-features
+
+  # Resolve every *direct* dependency to the lowest version allowed by
+  # Cargo.toml, then build and test on stable. Catches version floors that are
+  # lower than the APIs we actually use. (Transitive deps are left to the
+  # solver: full `-Z minimal-versions` mostly surfaces other crates' mistakes.)
+  minimal-versions:
+    name: minimal direct dependency versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: minimal-versions
+      - run: cargo +nightly update -Z direct-minimal-versions
+      - run: cargo +stable test --locked --all-features
+
+  # Resolve every dependency to the newest version allowed by Cargo.toml and
+  # test against that, so breakage in a fresh downstream resolution is caught
+  # before users hit it.
+  latest-versions:
+    name: latest dependency versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: latest-versions
+      - run: cargo update
+      - run: cargo test --locked --all-features

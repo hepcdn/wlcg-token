@@ -4,15 +4,18 @@
 //! [`reqwest_middleware`] to inject the authorization token into requests.
 //!
 //! # Example
-//! ```
+//! ```no_run
 //! use reqwest_middleware::ClientBuilder;
 //! use wlcg_token::reqwest::WLCGTokenAuthMiddleware;
 //!
+//! # async fn example() -> anyhow::Result<()> {
 //! let client = ClientBuilder::new(reqwest::Client::new())
-//!     .with(WLCGTokenAuthMiddleware::try_new().expect("Failed to create WLCGTokenAuthMiddleware"))
+//!     .with(WLCGTokenAuthMiddleware::try_new()?)
 //!     .build();
 //!
-//! let response = client.get("https://example.com").send().await.expect("Request failed");
+//! let response = client.get("https://example.com").send().await?;
+//! # Ok(())
+//! # }
 //! ```
 use anyhow::anyhow;
 use async_trait::async_trait;
@@ -21,6 +24,7 @@ use reqwest_middleware::{Middleware, Next};
 
 use crate::{TokenProviderError, load_token};
 
+#[derive(Debug, Clone, Copy)]
 pub struct WLCGTokenAuthMiddleware {}
 
 impl WLCGTokenAuthMiddleware {
@@ -47,7 +51,7 @@ impl Middleware for WLCGTokenAuthMiddleware {
         let token = load_token().map_err(|e| anyhow!("Failed to load WLCG token: {}", e))?;
         let mut auth_value =
             reqwest::header::HeaderValue::from_str(format!("Bearer {}", token.raw()).as_str())
-                .expect("token became malformed in runtime");
+                .map_err(|e| anyhow!("malformed token: {}", e))?;
         auth_value.set_sensitive(true);
         req.headers_mut().insert(AUTHORIZATION, auth_value);
 

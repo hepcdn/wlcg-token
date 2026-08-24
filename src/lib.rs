@@ -8,11 +8,12 @@
 //! reload when the token nears expiry, and a user-friendly authorization
 //! provider middleware for use with the `reqwest` HTTP client.
 
-pub mod discovery;
+mod discovery;
 mod provider;
 #[cfg(feature = "reqwest")]
 pub mod reqwest;
 mod token;
 
+pub use discovery::{TokenDiscoveryError, TokenFileSource, load_raw_token};
 pub use provider::{TokenProviderError, load_token};
-pub use token::{TokenParseError, WLCGToken};
+pub use token::{DateClaim, TokenParseError, WLCGToken};

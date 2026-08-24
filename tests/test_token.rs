@@ -1,4 +1,4 @@
-use wlcg_token::WLCGToken;
+use wlcg_token::{WLCGToken, load_token};
 
 /// Test token generated from json:
 /// ```json
@@ -27,4 +27,14 @@ fn test_token_is_valid() {
         token.is_valid(),
         "Test token should be valid unless this is run after 2058"
     );
+}
+
+#[test]
+fn test_token_load_env() {
+    // The cache is populated on first call and held in a global, so the
+    // variable only needs to be set while the provider initialises.
+    temp_env::with_var("BEARER_TOKEN", Some(TEST_TOKEN_RAW), || {
+        let token = load_token().expect("Failed to load token from environment");
+        assert_eq!(token.raw(), TEST_TOKEN_RAW);
+    });
 }

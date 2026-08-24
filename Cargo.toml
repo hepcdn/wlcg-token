@@ -2,6 +2,7 @@
 name = "wlcg-token"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
 
 [dependencies]
 thiserror = "2.0.20"
@@ -15,7 +16,9 @@ arc-swap = "1.9.2"
 base64 = "0.23.1"
 serde_json = "1.0.151"
 
+[dev-dependencies]
+temp-env = "0.3.6"
+
 [features]
-default = ["reqwest"]
+default = []
 reqwest = ["dep:reqwest", "dep:reqwest-middleware", "dep:async-trait", "dep:http", "dep:anyhow"]
-anyhow = ["dep:anyhow"]

@@ -30,6 +30,13 @@ static TOKEN_CACHE: LazyLock<ArcSwap<Result<WLCGToken, TokenProviderError>>> =
         )))
     });
 
+/// Refresh the token once it has less than this long left to live.
+///
+/// WLCG tokens typically live for ~1 hour and are renewed by an external agent
+/// (e.g. `htgettoken`) well before expiry, so 5 minutes leaves plenty of
+/// room while still polling at `token_poll_interval` near the end.
+const REFRESH_MARGIN: Duration = Duration::from_secs(5 * 60);
+
 /// Global token refresh thread handle
 static TOKEN_REFRESH_THREAD: LazyLock<thread::JoinHandle<()>> = LazyLock::new(|| {
     // How often to retry token discovery if the token is dead (or not yet discovered).
@@ -42,16 +49,35 @@ static TOKEN_REFRESH_THREAD: LazyLock<thread::JoinHandle<()>> = LazyLock::new(||
     TOKEN_CACHE.store(refresh_token().into());
     thread::spawn(move || {
         loop {
-            let exp_in = match TOKEN_CACHE.load().as_ref() {
+            // Sleep until the token enters its refresh margin; once inside the
+            // margin (or with no token at all) fall back to plain polling.
+            let sleep_time = match TOKEN_CACHE.load().as_ref() {
                 Ok(token) => token
                     .expiry()
                     .duration_since(SystemTime::now())
-                    .unwrap_or_default(),
-                Err(_) => Default::default(),
+                    .unwrap_or_default()
+                    .saturating_sub(REFRESH_MARGIN)
+                    .max(token_poll_interval),
+                Err(_) => token_poll_interval,
             };
-            let sleep_time = (exp_in / 2).max(token_poll_interval);
             thread::sleep(sleep_time);
-            TOKEN_CACHE.store(refresh_token().into());
+
+            let token = refresh_token();
+            let change_token = match (TOKEN_CACHE.load().as_ref(), &token) {
+                // Only trade a live token for one that outlives it
+                (Ok(old), Ok(new)) if old.is_valid() => {
+                    new.is_valid() && new.expiry() > old.expiry()
+                }
+                // A dead token is worth replacing with anything, even an error,
+                // so callers learn why no token is available
+                (Ok(_), _) => true,
+                (Err(_), Ok(_)) => true,
+                // A new error may be more informative than the old one
+                (Err(_), Err(_)) => true,
+            };
+            if change_token {
+                TOKEN_CACHE.store(token.into());
+            }
         }
     })
 });
@@ -67,13 +93,19 @@ fn refresh_token() -> Result<WLCGToken, TokenProviderError> {
 /// Fetches the current token from the global cache, which is automatically
 /// refreshed when the token nears expiry via an internal background thread.
 /// The cache is populated following the token discovery protocol, as
-/// described in [`crate::discovery::load_raw_token`].
+/// described in [`load_raw_token`](crate::load_raw_token).
 ///
 /// When a token is not available, the environment is polled for a new token
 /// every 60 seconds or the interval specified by the `WLCG_TOKEN_POLL_INTERVAL`
-/// environment variable.
+/// environment variable. A live token is re-read from the environment once it
+/// is within 5 minutes of expiry, and replaced only by a token that outlives it.
+///
+/// When the token cannot be discovered or is invalid, an error is returned. The
+/// error may change over time as the environment is polled for a new token.
+/// Callers should handle the error and retry the call to [`load_token()`] if
+/// appropriate.
 pub fn load_token() -> Result<WLCGToken, TokenProviderError> {
     // Ensure the refresh thread is started
-    let _ = TOKEN_REFRESH_THREAD;
+    LazyLock::force(&TOKEN_REFRESH_THREAD);
     TOKEN_CACHE.load().as_ref().clone()
 }

@@ -12,9 +12,9 @@ for use with the [`reqwest`](https://crates.io/crates/reqwest) HTTP client.
 ## Example usage
 
 The main entry point for this library is the `load_token()` function, which
-returns a `WLCGToken` struct containing the raw token string and parsed claims.
-The token is automatically discovered and cached, and will be refreshed when it
-nears expiry.
+returns a `WLCGToken` struct containing the raw token string and parsed claims
+related to the token's validity (`nbf` and `exp`).  The token is automatically
+discovered and cached, and will be refreshed when it nears expiry.
 
 ```rust
 use wlcg_token::{load_token, WLCGToken};
@@ -29,9 +29,10 @@ Add the following to your `Cargo.toml`:
 ```toml
 [dependencies]
 wlcg-token = { version = "0.1", features = ["reqwest"] }
-reqwest = { version = "0.13" }
-reqwest-middleware = { version = "0.5" }
-tokio = { version = "1" }
+reqwest = "0.13"
+reqwest-middleware = "0.5"
+tokio = { version = "1", features = ["rt", "net"] }
+anyhow = "1"
 ```
 
 Then use the library as follows:
@@ -45,12 +46,15 @@ async fn example() -> anyhow::Result<()> {
         .with(WLCGTokenAuthMiddleware::try_new()?)
         .build();
 
-    let response = client.get("https://example.com").send().await?;
+    let _response = client.get("https://example.com").send().await?;
     Ok(())
 }
 
 fn main() {
-    let rt = tokio::runtime::Runtime::new().unwrap();
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("Failed to create Tokio runtime");
     rt.block_on(example()).unwrap();
 }
 ```

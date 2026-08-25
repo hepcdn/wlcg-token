@@ -1,8 +1,13 @@
 [package]
 name = "wlcg-token"
+description = "A library for discovering and using WLCG tokens"
+repository = "https://github.com/hepcdn/wlcg-token"
+readme = "README.md"
+keywords = ["wlcg", "jwt", "middleware"]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
+license = "MIT OR Apache-2.0"
 
 [dependencies]
 thiserror = "2.0.3"
